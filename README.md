@@ -12,7 +12,8 @@ It works on any project with no per-board setup. Parts are drawn from their
 schematic is rasterised with Inkscape when installed (otherwise with
 wxWidgets, which leaves out embedded bitmaps such as title-block logos).
 kicad-cli works on the saved files, so the plugin offers to save a modified
-board first.
+board first. Progress and the result appear in one small window; *Cancel*
+stops the running tool and keeps the images already finished.
 
 Tested with KiCad 10 on Windows.
 
@@ -38,9 +39,13 @@ The button appears in the top toolbar and under *Tools → External Plugins*.
 & "C:\Program Files\KiCad\10.0\bin\python.exe" plugins\export.py path\to\board.kicad_pcb
 ```
 
-## Icon
+## Licence
 
-`icon.svg` is "Image" by Kasanah from the Noun Project
-(https://thenounproject.com/icon/image-8290303/), cropped and recoloured.
+The code is MIT licensed; see [LICENSE](LICENSE).
+
+`icon.svg` and the PNGs rendered from it are not covered by that licence:
+the icon is "Image" by Kasanah from the Noun Project
+(https://thenounproject.com/icon/image-8290303/), used under CC BY 3.0,
+cropped and recoloured.
 `plugins/icon.png` (24 px, toolbar) and `plugins/icon_48.png` (dialog) are
 rendered from it.

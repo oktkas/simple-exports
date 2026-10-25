@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 
 import wx
 
@@ -30,12 +31,30 @@ def _tool(name, candidates=()):
     return shutil.which(name)
 
 
-def _run(args):
+class Cancelled(Exception):
+    pass
+
+
+def _run(args, cancel):
+    """Run a tool to completion, or kill it (and its children) once cancel is set."""
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8',
-                            errors='replace', creationflags=flags)
-    if result.returncode != 0:
-        raise RuntimeError(f'{os.path.basename(args[0])} failed:\n{result.stderr or result.stdout}')
+    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                          encoding='utf-8', errors='replace', creationflags=flags) as proc:
+        output = []
+        reader = threading.Thread(target=lambda: output.append(proc.stdout.read()), daemon=True)
+        reader.start()
+        while proc.poll() is None:
+            if cancel.wait(0.1):
+                if os.name == 'nt':
+                    subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)],
+                                   capture_output=True, creationflags=flags)
+                else:
+                    proc.kill()
+                proc.wait()
+                raise Cancelled()
+        reader.join()
+    if proc.returncode != 0:
+        raise RuntimeError(f'{os.path.basename(args[0])} failed:\n{"".join(output)}')
 
 
 def _trim(png):
@@ -62,11 +81,11 @@ def _trim(png):
     image.GetSubImage(wx.Rect(x0, y0, x1 - x0, y1 - y0)).SaveFile(png, wx.BITMAP_TYPE_PNG)
 
 
-def _svg_to_png(svg, png):
+def _svg_to_png(svg, png, cancel):
     inkscape = _tool('inkscape', INKSCAPE_CANDIDATES)
     if inkscape:
         _run([inkscape, svg, '--export-type=png', f'--export-filename={png}',
-              f'--export-width={SCHEMATIC_WIDTH}'])
+              f'--export-width={SCHEMATIC_WIDTH}'], cancel)
         return
     # wx's built-in SVG rasteriser; it skips embedded bitmaps such as logos.
     with open(svg, encoding='utf-8') as f:
@@ -76,11 +95,14 @@ def _svg_to_png(svg, png):
     bitmap.ConvertToImage().SaveFile(png, wx.BITMAP_TYPE_PNG)
 
 
-def export(board, progress=lambda step: None):
+def export(board, progress=lambda step: None, cancel=None):
     """Write img/front.png, back.png and schematic.png next to the board.
 
     Calls progress(text) before each step and returns the written paths.
+    Setting the cancel event stops the running tool and raises Cancelled;
+    images finished before that are kept.
     """
+    cancel = cancel or threading.Event()
     kicad_cli = _tool('kicad-cli')
     if not kicad_cli:
         raise RuntimeError('kicad-cli was not found next to KiCad or on PATH.')
@@ -95,7 +117,7 @@ def export(board, progress=lambda step: None):
         _run([kicad_cli, 'pcb', 'render', board, '-o', png, '--side', side,
               '--width', str(RENDER_SIZE[0]), '--height', str(RENDER_SIZE[1]),
               '--quality', 'basic', '--use-board-stackup-colors',
-              '--background', 'transparent'])
+              '--background', 'transparent'], cancel)
         _trim(png)
         written.append(png)
 
@@ -103,12 +125,12 @@ def export(board, progress=lambda step: None):
     if os.path.isfile(schematic):
         progress('Exporting schematic')
         with tempfile.TemporaryDirectory() as tmp:
-            _run([kicad_cli, 'sch', 'export', 'svg', '-o', tmp, schematic])
+            _run([kicad_cli, 'sch', 'export', 'svg', '-o', tmp, schematic], cancel)
             # A hierarchical design gives one SVG per sheet; the root sheet
             # carries the project name.
             root = os.path.join(tmp, os.path.splitext(os.path.basename(schematic))[0] + '.svg')
             png = os.path.join(out_dir, 'schematic.png')
-            _svg_to_png(root, png)
+            _svg_to_png(root, png, cancel)
             written.append(png)
     return written
 

@@ -23,12 +23,13 @@ class ExportDialog(wx.Dialog):
         self.detail = wx.StaticText(self, label='Starting', size=(360, -1))
         self.gauge = wx.Gauge(self, range=100, size=(360, 6))
         self.open = wx.Button(self, label='Open folder')
-        self.close = wx.Button(self, wx.ID_CLOSE)
+        self.close = wx.Button(self, wx.ID_CANCEL)
         self.open.Disable()
-        self.close.Disable()
         self.open.Bind(wx.EVT_BUTTON, lambda _: os.startfile(self.folder))
-        self.close.Bind(wx.EVT_BUTTON, lambda _: self.EndModal(wx.ID_CLOSE))
+        self.close.Bind(wx.EVT_BUTTON, self.on_close)
         self.Bind(wx.EVT_CLOSE, self.on_close)
+        self.cancel = threading.Event()
+        self.done = False
 
         text = wx.BoxSizer(wx.VERTICAL)
         text.Add(self.heading)
@@ -54,7 +55,10 @@ class ExportDialog(wx.Dialog):
 
     def work(self, board):
         try:
-            written = export.export(board, lambda step: wx.CallAfter(self.detail.SetLabel, step + '...'))
+            written = export.export(board, lambda step: wx.CallAfter(self.detail.SetLabel, step + '...'),
+                                    self.cancel)
+        except export.Cancelled:
+            wx.CallAfter(self.finish, 'Export cancelled', 'Images finished before cancelling were kept.', False)
         except Exception as error:
             wx.CallAfter(self.finish, 'Export failed', str(error), False)
         else:
@@ -68,13 +72,20 @@ class ExportDialog(wx.Dialog):
         self.detail.SetLabel(detail)
         self.detail.Wrap(360)
         self.open.Enable(ok)
+        self.close.SetLabel('Close')
         self.close.Enable()
         (self.open if ok else self.close).SetFocus()
+        self.done = True
         self.Fit()
 
     def on_close(self, event):
-        if self.close.IsEnabled():
+        if self.done:
             self.EndModal(wx.ID_CLOSE)
+        elif not self.cancel.is_set():
+            # The worker kills the running tool and reports back via finish().
+            self.cancel.set()
+            self.close.Disable()
+            self.detail.SetLabel('Cancelling...')
 
 
 class SimpleExports(pcbnew.ActionPlugin):
