@@ -19,8 +19,26 @@ Tested with KiCad 10 on Windows.
 
 ## Install
 
-Link (or copy) the `plugins` folder into KiCad's plugin directory under the
-name `simple_exports`, then restart the PCB editor or use
+1. Download `simple-exports-<version>.zip` from the
+   [latest release](https://github.com/oktkas/simple-exports/releases/latest).
+   Don't unzip it.
+2. In KiCad, open *Plugin and Content Manager*, click *Install from File...*
+   and pick the zip.
+3. Restart the PCB editor.
+
+The button appears in the top toolbar and under *Tools → External Plugins*.
+Update by installing a newer zip the same way; remove it from the
+*Installed* tab.
+
+## Development
+
+`python package.py` builds the release zip into `dist/` from
+`metadata.json`, `plugins/` and `resources/icon.png`. Bump the version in
+`metadata.json` first.
+
+To run from a checkout instead, link the `plugins` folder into KiCad's
+plugin directory (don't also install the zip, or the button shows twice),
+then restart the PCB editor or use
 *Tools → External Plugins → Refresh Plugins*:
 
 ```powershell
@@ -28,8 +46,6 @@ New-Item -ItemType Junction `
   -Path "$env:USERPROFILE\Documents\KiCad\10.0\scripting\plugins\simple_exports" `
   -Target "$PWD\plugins"
 ```
-
-The button appears in the top toolbar and under *Tools → External Plugins*.
 
 ## Outside KiCad
 
@@ -45,7 +61,7 @@ The code is MIT licensed; see [LICENSE](LICENSE).
 
 `icon.svg` and the PNGs rendered from it are not covered by that licence:
 the icon is "Image" by Kasanah from the Noun Project
-(https://thenounproject.com/icon/image-8290303/), used under CC BY 3.0,
+(<https://thenounproject.com/icon/image-8290303/>), used under CC BY 3.0,
 cropped and recoloured.
 `plugins/icon.png` (24 px, toolbar) and `plugins/icon_48.png` (dialog) are
 rendered from it.

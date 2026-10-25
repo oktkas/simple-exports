@@ -1,0 +1,31 @@
+{
+  "$schema": "https://go.kicad.org/pcm/schemas/v1",
+  "name": "Simple Exports",
+  "description": "One click: front.png, back.png and schematic.png in the project's img folder",
+  "description_full": "Adds a toolbar button to the PCB editor that writes three images into an img folder next to the board:\n\n- front.png and back.png: orthographic 3D renders in the board's stackup colours, trimmed to the board on a transparent background\n- schematic.png: the root schematic sheet, 2400 px wide\n\nNo per-board setup: parts come from their 3D models and rendering uses the running KiCad's kicad-cli. The schematic is rasterised with Inkscape when it is installed, otherwise with wxWidgets (which leaves out embedded bitmaps such as title-block logos). Progress and the result appear in one small window, and the export can be cancelled.",
+  "identifier": "com.github.oktkas.simple-exports",
+  "type": "plugin",
+  "author": {
+    "name": "oktkas",
+    "contact": {
+      "github": "https://github.com/oktkas"
+    }
+  },
+  "license": "MIT",
+  "resources": {
+    "homepage": "https://github.com/oktkas/simple-exports"
+  },
+  "tags": [
+    "export",
+    "render",
+    "image",
+    "documentation"
+  ],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "status": "stable",
+      "kicad_version": "9.0"
+    }
+  ]
+}
