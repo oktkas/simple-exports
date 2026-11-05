@@ -3,8 +3,10 @@
 A one-click KiCad PCB editor plugin that writes three images into an `img`
 folder next to the board:
 
-- `front.png` and `back.png`: orthographic 3D renders in the board's stackup
-  colours, trimmed to the board on a transparent background
+- `front.png` and `back.png`: unshaded orthographic 3D renders in the board's
+  stackup colours, trimmed to the board on a transparent background. They use
+  your 3D viewer's render settings with shadows, reflections, post-processing
+  and the floor turned off (in a temporary copy; your settings are untouched)
 - `schematic.png`: the root schematic sheet, 2400 px wide
 
 It works on any project with no per-board setup. Parts are drawn from their
