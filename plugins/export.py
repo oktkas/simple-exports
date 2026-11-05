@@ -3,6 +3,7 @@
 Kept free of pcbnew so it can be run and tested outside the PCB editor:
     python export.py BOARD.kicad_pcb
 """
+import json
 import os
 import re
 import shutil
@@ -35,11 +36,12 @@ class Cancelled(Exception):
     pass
 
 
-def _run(args, cancel):
+def _run(args, cancel, env=None):
     """Run a tool to completion, or kill it (and its children) once cancel is set."""
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                          encoding='utf-8', errors='replace', creationflags=flags) as proc:
+                          encoding='utf-8', errors='replace', creationflags=flags,
+                          env=env) as proc:
         output = []
         reader = threading.Thread(target=lambda: output.append(proc.stdout.read()), daemon=True)
         reader.start()
@@ -55,6 +57,44 @@ def _run(args, cancel):
         reader.join()
     if proc.returncode != 0:
         raise RuntimeError(f'{os.path.basename(args[0])} failed:\n{"".join(output)}')
+
+
+def _config_home():
+    if os.environ.get('KICAD_CONFIG_HOME'):
+        return os.environ['KICAD_CONFIG_HOME']
+    if os.name == 'nt':
+        return os.path.join(os.environ['APPDATA'], 'kicad')
+    if sys.platform == 'darwin':
+        return os.path.expanduser('~/Library/Preferences/kicad')
+    return os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'kicad')
+
+
+def _unshaded_env(kicad_cli, tmp):
+    """Environment pointing kicad-cli at a copy of the user's KiCad settings
+    with shadows, reflections, post-processing and the floor turned off, so
+    '--quality user' renders flat like the 3D viewer's unshaded view.
+
+    Returns None (use the real settings) if they cannot be found.
+    """
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    version = subprocess.run([kicad_cli, '--version'], capture_output=True, text=True,
+                             creationflags=flags).stdout.strip()
+    series = '.'.join(version.split('.')[:2])          # '10.0.6' -> '10.0'
+    src = os.path.join(_config_home(), series)
+    if not os.path.isfile(os.path.join(src, '3d_viewer.json')):
+        return None
+    dst = os.path.join(tmp, series)
+    shutil.copytree(src, dst)
+    viewer = os.path.join(dst, '3d_viewer.json')
+    with open(viewer, encoding='utf-8') as f:
+        settings = json.load(f)
+    render = settings.setdefault('render', {})
+    for key in ('raytrace_shadows', 'raytrace_reflections',
+                'raytrace_post_processing', 'raytrace_backfloor'):
+        render[key] = False
+    with open(viewer, 'w', encoding='utf-8') as f:
+        json.dump(settings, f, indent=2)
+    return {**os.environ, 'KICAD_CONFIG_HOME': tmp}
 
 
 def _trim(png):
@@ -111,15 +151,20 @@ def export(board, progress=lambda step: None, cancel=None):
     os.makedirs(out_dir, exist_ok=True)
     written = []
 
-    for side, name in (('top', 'front'), ('bottom', 'back')):
-        progress(f'Rendering {name}')
-        png = os.path.join(out_dir, name + '.png')
-        _run([kicad_cli, 'pcb', 'render', board, '-o', png, '--side', side,
-              '--width', str(RENDER_SIZE[0]), '--height', str(RENDER_SIZE[1]),
-              '--quality', 'basic', '--use-board-stackup-colors',
-              '--background', 'transparent'], cancel)
-        _trim(png)
-        written.append(png)
+    with tempfile.TemporaryDirectory() as config:
+        env = _unshaded_env(kicad_cli, config)
+        for side, name in (('top', 'front'), ('bottom', 'back')):
+            progress(f'Rendering {name}')
+            png = os.path.join(out_dir, name + '.png')
+            _run([kicad_cli, 'pcb', 'render', board, '-o', png, '--side', side,
+                  '--width', str(RENDER_SIZE[0]), '--height', str(RENDER_SIZE[1]),
+                  # 'user' takes the 3D viewer's render settings; 'basic' and 'high'
+                  # draw copper under the mask in bare-copper orange, tinting a
+                  # white mask peach.
+                  '--quality', 'user', '--use-board-stackup-colors',
+                  '--background', 'transparent'], cancel, env)
+            _trim(png)
+            written.append(png)
 
     schematic = os.path.splitext(board)[0] + '.kicad_sch'
     if os.path.isfile(schematic):
