@@ -47,14 +47,18 @@ class ExportDialog(wx.Dialog):
         board_box = wx.StaticBoxSizer(wx.VERTICAL, self, 'Board renders')
         panel = board_box.GetStaticBox()
         self.unshaded = wx.RadioButton(panel, label='Unshaded (your 3D viewer settings)', style=wx.RB_GROUP)
+        self.shaded = wx.RadioButton(panel, label='Shaded (with shadows and reflections)')
         self.basic = wx.RadioButton(panel, label='Basic (kicad-cli basic quality)')
         self.unshaded.SetToolTip('Shadows, reflections, post-processing and the floor turned off.')
+        self.shaded.SetToolTip('Your 3D viewer settings with shadows, reflections and post-processing '
+                               'on; the floor stays off. Slower.')
         self.basic.SetToolTip('Flat, saturated mask colours; copper under the mask can tint light masks.')
-        (self.unshaded if options['style'] == 'unshaded' else self.basic).SetValue(True)
+        self.styles = {'unshaded': self.unshaded, 'shaded': self.shaded, 'basic': self.basic}
+        self.styles[options['style']].SetValue(True)
         self.other_side = wx.CheckBox(panel, label='Show parts on the other side')
         self.other_side.SetValue(options['other_side'])
         self.other_side.SetToolTip('Off: each render shows only the parts mounted on that side.')
-        for control in (self.unshaded, self.basic):
+        for control in self.styles.values():
             board_box.Add(control, 0, wx.ALL, 4)
         board_box.Add(self.other_side, 0, wx.LEFT | wx.RIGHT | wx.TOP | wx.BOTTOM, 4)
         self.board_box = board_box
@@ -104,12 +108,12 @@ class ExportDialog(wx.Dialog):
         parts = self.selected()
         self.go.Enable(bool(parts))
         renders = 'front' in parts or 'back' in parts
-        for control in (self.unshaded, self.basic, self.other_side):
+        for control in (*self.styles.values(), self.other_side):
             control.Enable(renders)
 
     def start(self, _):
         parts = self.selected()
-        style = 'unshaded' if self.unshaded.GetValue() else 'basic'
+        style = next(name for name, button in self.styles.items() if button.GetValue())
         other_side = self.other_side.GetValue()
         options.update(parts=set(parts), style=style, other_side=other_side)
 

@@ -69,10 +69,12 @@ def _config_home():
     return os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'kicad')
 
 
-def _unshaded_env(kicad_cli, tmp):
+def _render_env(kicad_cli, tmp, shaded):
     """Environment pointing kicad-cli at a copy of the user's KiCad settings
-    with shadows, reflections, post-processing and the floor turned off, so
-    '--quality user' renders flat like the 3D viewer's unshaded view.
+    for '--quality user'. Unshaded turns shadows, reflections and
+    post-processing off, so renders look like the 3D viewer's unshaded view;
+    shaded turns them on. The floor is always off, keeping the background
+    transparent.
 
     Returns None (use the real settings) if they cannot be found.
     """
@@ -89,9 +91,9 @@ def _unshaded_env(kicad_cli, tmp):
     with open(viewer, encoding='utf-8') as f:
         settings = json.load(f)
     render = settings.setdefault('render', {})
-    for key in ('raytrace_shadows', 'raytrace_reflections',
-                'raytrace_post_processing', 'raytrace_backfloor'):
-        render[key] = False
+    for key in ('raytrace_shadows', 'raytrace_reflections', 'raytrace_post_processing'):
+        render[key] = shaded
+    render['raytrace_backfloor'] = False
     with open(viewer, 'w', encoding='utf-8') as f:
         json.dump(settings, f, indent=2)
     return {**os.environ, 'KICAD_CONFIG_HOME': tmp}
@@ -195,7 +197,7 @@ def _svg_to_png(svg, png, cancel):
 
 
 PARTS = ('front', 'back', 'schematic')
-STYLES = ('unshaded', 'basic')
+STYLES = ('unshaded', 'shaded', 'basic')
 
 
 def export(board, progress=lambda step: None, cancel=None,
@@ -204,7 +206,8 @@ def export(board, progress=lambda step: None, cancel=None,
 
     parts picks which of the three to write. style 'unshaded' renders with the
     3D viewer's settings minus shadows, reflections, post-processing and floor;
-    'basic' uses kicad-cli's basic quality. other_side=False leaves out the 3D
+    'shaded' keeps those on (floor still off); 'basic' uses kicad-cli's basic
+    quality. other_side=False leaves out the 3D
     models of parts on the far side of the board.
 
     Calls progress(text) before each step and returns the written paths.
@@ -228,8 +231,8 @@ def export(board, progress=lambda step: None, cancel=None,
             # 'user' takes the 3D viewer's render settings; 'basic' and 'high'
             # draw copper under the mask in bare-copper orange, tinting a
             # white mask peach.
-            env = _unshaded_env(kicad_cli, tmp) if style == 'unshaded' else None
-            quality = 'user' if style == 'unshaded' else 'basic'
+            env = _render_env(kicad_cli, tmp, style == 'shaded') if style != 'basic' else None
+            quality = 'basic' if style == 'basic' else 'user'
             for side, name in sides:
                 progress(f'Rendering {name}')
                 png = os.path.join(out_dir, name + '.png')

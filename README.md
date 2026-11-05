@@ -14,9 +14,13 @@ to the board:
 The toolbar button opens a small window where you pick:
 
 - which images to write (all three by default)
-- the render style: *Unshaded* (above, the default) or *Basic*, kicad-cli's
-  basic quality, which gives flatter, more saturated mask colours but can
-  tint light masks with the copper underneath
+- the render style:
+  - *Unshaded* (above, the default)
+  - *Shaded*: your 3D viewer's settings with shadows, reflections and
+    post-processing on (floor still off, so the background stays
+    transparent); slower
+  - *Basic*: kicad-cli's basic quality, with flatter, more saturated mask
+    colours, though copper under the mask can tint light masks
 - whether each render also shows the parts mounted on the other side, such as
   a connector sticking out past the edge (off by default)
 
@@ -82,7 +86,7 @@ New-Item -ItemType Junction `
 ```
 
 Options match the window: `--only front back schematic`,
-`--style unshaded|basic` and `--other-side`.
+`--style unshaded|shaded|basic` and `--other-side`.
 
 ## Licence
 
