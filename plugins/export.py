@@ -97,6 +97,65 @@ def _unshaded_env(kicad_cli, tmp):
     return {**os.environ, 'KICAD_CONFIG_HOME': tmp}
 
 
+TOKENS = re.compile(r'"(?:[^"\\]|\\.)*"|[()]')
+MODEL_PATH = re.compile(r'(\(model\s+")((?:[^"\\]|\\.)*)"')
+
+
+def _without_far_models(text, far_layer, project_dir):
+    """Board text with the 3D models removed from footprints on far_layer.
+
+    The result is rendered from another folder, so ${KIPRJMOD} and relative
+    model paths are made to point back at the project.
+    """
+    name_at = lambda start: re.match(r'\(([^\s()"]*)', text[start:start + 64]).group(1)
+    stack, children, cut = [], [], []
+    for m in TOKENS.finditer(text):
+        if m.group() == '(':
+            stack.append(m.start())
+        elif m.group() == ')' and stack:
+            start = stack.pop()
+            depth = len(stack)                  # 0 = kicad_pcb, 1 = footprint, 2 = its fields
+            if depth == 2:
+                children.append((start, m.end()))
+            elif depth == 1:
+                if name_at(start) == 'footprint':
+                    layer = next((re.search(r'"([^"]+)"', text[s:e]) for s, e in children
+                                  if name_at(s) == 'layer'), None)
+                    if layer and layer.group(1) == far_layer:
+                        cut += [(s, e) for s, e in children if name_at(s) == 'model']
+                children = []
+    pieces, last = [], 0
+    for s, e in sorted(cut):
+        pieces.append(text[last:s])
+        last = e
+    text = ''.join(pieces) + text[last:]
+
+    project = project_dir.replace('\\', '/')
+
+    def absolute(m):
+        path = m.group(2).replace('${KIPRJMOD}', project).replace('$(KIPRJMOD)', project)
+        if not (path.startswith('${') or path.startswith('$(') or os.path.isabs(path)):
+            path = project + '/' + path
+        return m.group(1) + path + '"'
+    return MODEL_PATH.sub(absolute, text)
+
+
+def _one_sided_board(board, side, tmp):
+    """Copy of the board (and its project file) in tmp without the other side's 3D models."""
+    with open(board, encoding='utf-8') as f:
+        text = f.read()
+    far = 'B.Cu' if side == 'top' else 'F.Cu'
+    folder = os.path.join(tmp, side)
+    os.makedirs(folder)
+    copy = os.path.join(folder, os.path.basename(board))
+    with open(copy, 'w', encoding='utf-8') as f:
+        f.write(_without_far_models(text, far, os.path.dirname(os.path.abspath(board))))
+    project = os.path.splitext(board)[0] + '.kicad_pro'
+    if os.path.isfile(project):                 # text variables live here
+        shutil.copy(project, folder)
+    return copy
+
+
 def _trim(png):
     """Crop a transparent PNG to its opaque pixels plus PADDING."""
     image = wx.Image(png, wx.BITMAP_TYPE_PNG)
@@ -135,13 +194,25 @@ def _svg_to_png(svg, png, cancel):
     bitmap.ConvertToImage().SaveFile(png, wx.BITMAP_TYPE_PNG)
 
 
-def export(board, progress=lambda step: None, cancel=None):
+PARTS = ('front', 'back', 'schematic')
+STYLES = ('unshaded', 'basic')
+
+
+def export(board, progress=lambda step: None, cancel=None,
+           parts=PARTS, style='unshaded', other_side=False):
     """Write img/front.png, back.png and schematic.png next to the board.
+
+    parts picks which of the three to write. style 'unshaded' renders with the
+    3D viewer's settings minus shadows, reflections, post-processing and floor;
+    'basic' uses kicad-cli's basic quality. other_side=False leaves out the 3D
+    models of parts on the far side of the board.
 
     Calls progress(text) before each step and returns the written paths.
     Setting the cancel event stops the running tool and raises Cancelled;
     images finished before that are kept.
     """
+    if style not in STYLES:
+        raise ValueError(f'style must be one of {STYLES}')
     cancel = cancel or threading.Event()
     kicad_cli = _tool('kicad-cli')
     if not kicad_cli:
@@ -151,23 +222,27 @@ def export(board, progress=lambda step: None, cancel=None):
     os.makedirs(out_dir, exist_ok=True)
     written = []
 
-    with tempfile.TemporaryDirectory() as config:
-        env = _unshaded_env(kicad_cli, config)
-        for side, name in (('top', 'front'), ('bottom', 'back')):
-            progress(f'Rendering {name}')
-            png = os.path.join(out_dir, name + '.png')
-            _run([kicad_cli, 'pcb', 'render', board, '-o', png, '--side', side,
-                  '--width', str(RENDER_SIZE[0]), '--height', str(RENDER_SIZE[1]),
-                  # 'user' takes the 3D viewer's render settings; 'basic' and 'high'
-                  # draw copper under the mask in bare-copper orange, tinting a
-                  # white mask peach.
-                  '--quality', 'user', '--use-board-stackup-colors',
-                  '--background', 'transparent'], cancel, env)
-            _trim(png)
-            written.append(png)
+    sides = [(s, n) for s, n in (('top', 'front'), ('bottom', 'back')) if n in parts]
+    if sides:
+        with tempfile.TemporaryDirectory() as tmp:
+            # 'user' takes the 3D viewer's render settings; 'basic' and 'high'
+            # draw copper under the mask in bare-copper orange, tinting a
+            # white mask peach.
+            env = _unshaded_env(kicad_cli, tmp) if style == 'unshaded' else None
+            quality = 'user' if style == 'unshaded' else 'basic'
+            for side, name in sides:
+                progress(f'Rendering {name}')
+                png = os.path.join(out_dir, name + '.png')
+                source = board if other_side else _one_sided_board(board, side, tmp)
+                _run([kicad_cli, 'pcb', 'render', source, '-o', png, '--side', side,
+                      '--width', str(RENDER_SIZE[0]), '--height', str(RENDER_SIZE[1]),
+                      '--quality', quality, '--use-board-stackup-colors',
+                      '--background', 'transparent'], cancel, env)
+                _trim(png)
+                written.append(png)
 
     schematic = os.path.splitext(board)[0] + '.kicad_sch'
-    if os.path.isfile(schematic):
+    if 'schematic' in parts and os.path.isfile(schematic):
         progress('Exporting schematic')
         with tempfile.TemporaryDirectory() as tmp:
             _run([kicad_cli, 'sch', 'export', 'svg', '-o', tmp, schematic], cancel)
@@ -181,6 +256,15 @@ def export(board, progress=lambda step: None, cancel=None):
 
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Export board and schematic images.')
+    parser.add_argument('board')
+    parser.add_argument('--only', nargs='+', choices=PARTS, default=list(PARTS))
+    parser.add_argument('--style', choices=STYLES, default='unshaded')
+    parser.add_argument('--other-side', action='store_true',
+                        help="also show the far side's parts")
+    args = parser.parse_args()
     app = wx.App(False)
-    for path in export(os.path.abspath(sys.argv[1]), progress=print):
+    for path in export(os.path.abspath(args.board), print, None,
+                       args.only, args.style, args.other_side):
         print(path)

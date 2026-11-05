@@ -2,14 +2,36 @@
 
 # Simple Exports
 
-A one-click KiCad PCB editor plugin that writes three images into an `img`
-folder next to the board:
+A KiCad PCB editor plugin that writes three images into an `img` folder next
+to the board:
 
 - `front.png` and `back.png`: unshaded orthographic 3D renders in the board's
   stackup colours, trimmed to the board on a transparent background. They use
   your 3D viewer's render settings with shadows, reflections, post-processing
   and the floor turned off (in a temporary copy; your settings are untouched)
 - `schematic.png`: the root schematic sheet, 2400 px wide
+
+The toolbar button opens a small window where you pick:
+
+- which images to write (all three by default)
+- the render style: *Unshaded* (above, the default) or *Basic*, kicad-cli's
+  basic quality, which gives flatter, more saturated mask colours but can
+  tint light masks with the copper underneath
+- whether each render also shows the parts mounted on the other side, such as
+  a connector sticking out past the edge (off by default)
+
+The window remembers your choices until KiCad closes.
+
+With the defaults, the RISCy Remote, a small IR remote board, gives:
+
+<div align="center">
+  <img src="docs/examples/schematic.png" alt="RISCy Remote schematic" width="100%">
+</div>
+
+<div align="center">
+  <img src="docs/examples/front.png" alt="RISCy Remote front" width="420">
+  <img src="docs/examples/back.png" alt="RISCy Remote back" width="420">
+</div>
 
 It works on any project with no per-board setup. Parts are drawn from their
 3D models. Rendering uses `kicad-cli` from the running KiCad, and the
@@ -58,6 +80,9 @@ New-Item -ItemType Junction `
 ```powershell
 & "C:\Program Files\KiCad\10.0\bin\python.exe" plugins\export.py path\to\board.kicad_pcb
 ```
+
+Options match the window: `--only front back schematic`,
+`--style unshaded|basic` and `--other-side`.
 
 ## Licence
 
