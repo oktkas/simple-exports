@@ -1,3 +1,5 @@
+<img src="logo.png" alt="" width="128" align="right">
+
 # Simple Exports
 
 A one-click KiCad PCB editor plugin that writes three images into an `img`
@@ -61,9 +63,14 @@ New-Item -ItemType Junction `
 
 The code is MIT licensed; see [LICENSE](LICENSE).
 
-`icon.svg` and the PNGs rendered from it are not covered by that licence:
-the icon is "Image" by Kasanah from the Noun Project
+`logo.svg`, `logo.png` and the icons rendered from them are not covered by
+that licence: the logo is "Image" by Kasanah from the Noun Project
 (<https://thenounproject.com/icon/image-8290303/>), used under CC BY 3.0,
-cropped and recoloured.
-`plugins/icon.png` (24 px, toolbar) and `plugins/icon_48.png` (dialog) are
-rendered from it.
+recoloured.
+`plugins/icon.png` (24 px, toolbar), `plugins/icon_48.png` (dialog) and
+`resources/icon.png` (64 px, Plugin and Content Manager) are rendered from
+`logo.svg`, cropped to the drawing:
+
+```powershell
+inkscape logo.svg --export-area-drawing -w 24 -h 24 --export-filename=plugins\icon.png
+```
