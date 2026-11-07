@@ -69,6 +69,27 @@ def _config_home():
     return os.path.join(os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config')), 'kicad')
 
 
+def _settings_dir(kicad_cli):
+    """The running KiCad's settings folder, such as .../kicad/10.0."""
+    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    version = subprocess.run([kicad_cli, '--version'], capture_output=True, text=True,
+                             creationflags=flags).stdout.strip()
+    return os.path.join(_config_home(), '.'.join(version.split('.')[:2]))   # '10.0.6' -> '10.0'
+
+
+def _schematic_theme(kicad_cli):
+    """The colour theme selected in the schematic editor, or None.
+
+    kicad-cli's --theme claims to default to the schematic settings, but
+    (KiCad 10.0) it exports in the default theme unless the name is passed.
+    """
+    try:
+        with open(os.path.join(_settings_dir(kicad_cli), 'eeschema.json'), encoding='utf-8') as f:
+            return json.load(f).get('appearance', {}).get('color_theme') or None
+    except (OSError, ValueError):
+        return None
+
+
 def _render_env(kicad_cli, tmp, shaded):
     """Environment pointing kicad-cli at a copy of the user's KiCad settings
     for '--quality user'. Unshaded turns shadows, reflections and
@@ -78,14 +99,10 @@ def _render_env(kicad_cli, tmp, shaded):
 
     Returns None (use the real settings) if they cannot be found.
     """
-    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    version = subprocess.run([kicad_cli, '--version'], capture_output=True, text=True,
-                             creationflags=flags).stdout.strip()
-    series = '.'.join(version.split('.')[:2])          # '10.0.6' -> '10.0'
-    src = os.path.join(_config_home(), series)
+    src = _settings_dir(kicad_cli)
     if not os.path.isfile(os.path.join(src, '3d_viewer.json')):
         return None
-    dst = os.path.join(tmp, series)
+    dst = os.path.join(tmp, os.path.basename(src))
     shutil.copytree(src, dst)
     viewer = os.path.join(dst, '3d_viewer.json')
     with open(viewer, encoding='utf-8') as f:
@@ -201,14 +218,15 @@ STYLES = ('unshaded', 'shaded', 'basic')
 
 
 def export(board, progress=lambda step: None, cancel=None,
-           parts=PARTS, style='unshaded', other_side=False):
+           parts=PARTS, style='unshaded', other_side=False, default_colors=False):
     """Write img/front.png, back.png and schematic.png next to the board.
 
     parts picks which of the three to write. style 'unshaded' renders with the
     3D viewer's settings minus shadows, reflections, post-processing and floor;
     'shaded' keeps those on (floor still off); 'basic' uses kicad-cli's basic
     quality. other_side=False leaves out the 3D
-    models of parts on the far side of the board.
+    models of parts on the far side of the board. The schematic uses the
+    schematic editor's colour theme, or KiCad's default with default_colors.
 
     Calls progress(text) before each step and returns the written paths.
     Setting the cancel event stops the running tool and raises Cancelled;
@@ -248,7 +266,9 @@ def export(board, progress=lambda step: None, cancel=None,
     if 'schematic' in parts and os.path.isfile(schematic):
         progress('Exporting schematic')
         with tempfile.TemporaryDirectory() as tmp:
-            _run([kicad_cli, 'sch', 'export', 'svg', '-o', tmp, schematic], cancel)
+            theme = None if default_colors else _schematic_theme(kicad_cli)
+            _run([kicad_cli, 'sch', 'export', 'svg', '-o', tmp, schematic,
+                  *(['--theme', theme] if theme else [])], cancel)
             # A hierarchical design gives one SVG per sheet; the root sheet
             # carries the project name.
             root = os.path.join(tmp, os.path.splitext(os.path.basename(schematic))[0] + '.svg')
@@ -266,8 +286,10 @@ if __name__ == '__main__':
     parser.add_argument('--style', choices=STYLES, default='unshaded')
     parser.add_argument('--other-side', action='store_true',
                         help="also show the far side's parts")
+    parser.add_argument('--default-colors', action='store_true',
+                        help="schematic in KiCad's default colours instead of the editor's theme")
     args = parser.parse_args()
     app = wx.App(False)
     for path in export(os.path.abspath(args.board), print, None,
-                       args.only, args.style, args.other_side):
+                       args.only, args.style, args.other_side, args.default_colors):
         print(path)

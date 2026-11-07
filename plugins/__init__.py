@@ -11,7 +11,8 @@ NAME = 'Simple Exports'
 WIDTH = 360
 
 # Last choices, kept while KiCad runs.
-options = {'parts': set(export.PARTS), 'style': 'unshaded', 'other_side': False}
+options = {'parts': set(export.PARTS), 'style': 'unshaded', 'other_side': False,
+           'default_colors': False}
 
 
 class ExportDialog(wx.Dialog):
@@ -64,6 +65,14 @@ class ExportDialog(wx.Dialog):
         self.board_box = board_box
         self.choices.Add(board_box, 0, wx.EXPAND | wx.TOP, 10)
 
+        schematic_box = wx.StaticBoxSizer(wx.VERTICAL, self, 'Schematic')
+        self.default_colors = wx.CheckBox(schematic_box.GetStaticBox(), label='Use the default colour scheme')
+        self.default_colors.SetValue(options['default_colors'])
+        self.default_colors.SetToolTip("Off: the colour theme selected in the schematic editor.\n"
+                                       "On: KiCad's default schematic colours.")
+        schematic_box.Add(self.default_colors, 0, wx.ALL, 4)
+        self.choices.Add(schematic_box, 0, wx.EXPAND | wx.TOP, 10)
+
         # Progress
         self.gauge = wx.Gauge(self, range=100, size=(WIDTH, 6))
         self.gauge.Hide()
@@ -110,12 +119,15 @@ class ExportDialog(wx.Dialog):
         renders = 'front' in parts or 'back' in parts
         for control in (*self.styles.values(), self.other_side):
             control.Enable(renders)
+        self.default_colors.Enable('schematic' in parts)
 
     def start(self, _):
         parts = self.selected()
         style = next(name for name, button in self.styles.items() if button.GetValue())
         other_side = self.other_side.GetValue()
-        options.update(parts=set(parts), style=style, other_side=other_side)
+        default_colors = self.default_colors.GetValue()
+        options.update(parts=set(parts), style=style, other_side=other_side,
+                       default_colors=default_colors)
 
         self.state = 'running'
         self.choices.ShowItems(False)
@@ -127,12 +139,12 @@ class ExportDialog(wx.Dialog):
         self.Layout()
         self.Fit()
         self.timer.Start(50)
-        threading.Thread(target=self.work, args=(parts, style, other_side), daemon=True).start()
+        threading.Thread(target=self.work, args=(parts, style, other_side, default_colors), daemon=True).start()
 
-    def work(self, parts, style, other_side):
+    def work(self, parts, style, other_side, default_colors):
         try:
             written = export.export(self.board, lambda step: wx.CallAfter(self.detail.SetLabel, step + '...'),
-                                    self.cancel, parts, style, other_side)
+                                    self.cancel, parts, style, other_side, default_colors)
         except export.Cancelled:
             wx.CallAfter(self.finish, 'Export cancelled', 'Images finished before cancelling were kept.', False)
         except Exception as error:

@@ -9,7 +9,8 @@ to the board:
   stackup colours, trimmed to the board on a transparent background. They use
   your 3D viewer's render settings with shadows, reflections, post-processing
   and the floor turned off (in a temporary copy; your settings are untouched)
-- `schematic.png`: the root schematic sheet, 2400 px wide
+- `schematic.png`: the root schematic sheet, 2400 px wide, in the colour
+  theme selected in the schematic editor
 
 The toolbar button opens a small window where you pick:
 
@@ -23,6 +24,8 @@ The toolbar button opens a small window where you pick:
     colours, though copper under the mask can tint light masks
 - whether each render also shows the parts mounted on the other side, such as
   a connector sticking out past the edge (off by default)
+- whether the schematic uses KiCad's default colour scheme instead of your
+  schematic editor's theme (off by default)
 
 The window remembers your choices until KiCad closes.
 
@@ -86,7 +89,7 @@ New-Item -ItemType Junction `
 ```
 
 Options match the window: `--only front back schematic`,
-`--style unshaded|shaded|basic` and `--other-side`.
+`--style unshaded|shaded|basic`, `--other-side` and `--default-colors`.
 
 ## Licence
 
